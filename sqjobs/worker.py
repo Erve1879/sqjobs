@@ -1,3 +1,4 @@
+import signal
 import sys
 import traceback
 
@@ -15,11 +16,20 @@ class Worker(object):
         self.queue_name = queue_name
         self.timeout = timeout or self.DEFAULT_TIMEOUT
         self.registered_jobs = {}
+        self._shutting_down = False
+        signal.signal(signal.SIGINT, self.exit_gracefully)
+        signal.signal(signal.SIGTERM, self.exit_gracefully)
 
     def __repr__(self):
         return 'Worker({connector})'.format(
             connector=type(self.broker.connector).__name__
         )
+
+    def exit_gracefully(self):
+        """
+        Set self._shutting_down to True
+        """
+        self._shutting_down = True
 
     def register_job(self, job_class):
         name = job_class._task_name()
@@ -33,20 +43,26 @@ class Worker(object):
 
         self.registered_jobs[name] = job_class
 
-    def run(self):
-        for payload in self.broker.jobs(self.queue_name, self.timeout):
+    def run(self, message_count=1):
+        jobs = self.broker.jobs(self.queue_name, message_count, timeout=self.timeout)
+        for job in jobs:
+            if self._shutting_down:
+                break
             try:
-                job_class = self.registered_jobs.get(payload['name'])
+                job_class = self.registered_jobs.get(job['name'])
 
                 if not job_class:
-                    logger.error('Unregistered task: %s', payload['name'])
+                    logger.error('Unregistered task: %s', job['name'])
                     continue
 
-                job, args, kwargs = self.broker.unserialize_job(job_class, self.queue_name, payload)
+                job, args, kwargs = self.broker.unserialize_job(job_class, self.queue_name, job)
                 self._set_retry_time(job)
                 self._execute_job(job, args, kwargs)
+                jobs.remove(job)
             except:
                 logger.exception('Error executing job')
+        if len(jobs):
+            self.broker.set_retry_times(jobs)
 
     def _set_retry_time(self, job):
         if job.next_retry_time() is None:  # Use default value of the queue

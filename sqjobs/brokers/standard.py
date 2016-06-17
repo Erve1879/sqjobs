@@ -36,8 +36,8 @@ class Standard(Broker):
     def set_retry_time(self, job, retry_time):
         self.connector.set_retry_time(job.queue_name, job.broker_id, retry_time)
 
-    def jobs(self, queue_name, timeout=20):
-        while True:
-            payload = self.connector.dequeue(queue_name, wait_time=timeout)
-            if payload or not timeout:
-                yield payload
+    def set_retry_times(self, queue_name, jobs, retry_time):
+        self.connector.set_retry_times(queue_name, jobs, retry_time)
+
+    def jobs(self, queue_name, message_count, timeout=20):
+        return self.connector.dequeue(queue_name, message_count, wait_time=timeout)

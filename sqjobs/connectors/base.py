@@ -19,7 +19,7 @@ class Connector(object):
         raise NotImplementedError
 
     @abstractmethod
-    def dequeue(self, queue_name, wait_time=20):
+    def dequeue(self, queue_name, message_count, wait_time=20):
         """
         Receives the next message from a queue
 

@@ -75,7 +75,7 @@ class SQS(Connector):
         queue.send_message(MessageBody=message)
         logger.info('Sent new message to %s', queue_name)
 
-    def dequeue(self, queue_name, wait_time=20):
+    def dequeue(self, queue_name, message_count, wait_time=20):
         queue = self._get_queue(queue_name)
         messages = None
 
@@ -84,7 +84,7 @@ class SQS(Connector):
 
         while not messages:
             messages = queue.receive_messages(
-                MaxNumberOfMessages=1,
+                MaxNumberOfMessages=message_count,
                 WaitTimeSeconds=wait_time,
                 AttributeNames=['All'],
             )
@@ -96,9 +96,8 @@ class SQS(Connector):
                     return None  # Non-blocking mode
 
         logger.info('New message retrieved from %s', queue_name)
-        payload = SQSMessage.decode(messages[0])
-
-        return payload
+        payloads = SQSMessage.decode_multiple(messages)
+        return payloads
 
     def delete(self, queue_name, message_id):
         queue = self._get_queue(queue_name)
@@ -124,6 +123,21 @@ class SQS(Connector):
             'ReceiptHandle': message_id,
             'VisibilityTimeout': delay or 0
         }])
+
+        logger.info('Changed retry time of a message from queue %s', queue_name)
+
+    def set_retry_times(self, queue_name, jobs, delay):
+        queue = self._get_queue(queue_name)
+        if not queue:
+            raise QueueDoesNotExist('The queue %s does not exist' % queue_name)
+
+        entries = [{
+            'Id': str(index),
+            'ReceiptHandle': job.broker_id,
+            'VisibilityTimeout': delay or 0
+        } for index, job in enumerate(jobs)]
+
+        queue.change_message_visibility_batch(Entries=entries)
 
         logger.info('Changed retry time of a message from queue %s', queue_name)
 
@@ -185,6 +199,11 @@ class SQSMessage(object):
         logging.debug('Message payload: %s', str(payload))
 
         return payload
+
+    @classmethod
+    def decode_multiple(cls, messages):
+        payloads = [cls.decode(m) for m in messages]
+        return payloads
 
     @staticmethod
     def json_formatter(obj):

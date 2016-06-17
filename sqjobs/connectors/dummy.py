@@ -19,7 +19,7 @@ class Dummy(Connector):
         self._get_queue(queue_name).append(payload)
         self.num_jobs += 1
 
-    def dequeue(self, queue_name, wait_time=20):
+    def dequeue(self, queue_name, message_count, wait_time=20):
         job = None
 
         try:
